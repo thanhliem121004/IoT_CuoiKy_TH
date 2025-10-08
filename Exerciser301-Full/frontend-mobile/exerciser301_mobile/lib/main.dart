@@ -5,8 +5,17 @@ import 'package:http/http.dart' as http;
 
 void main() => runApp(const MyApp());
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  bool _dark = false;
+
+  void _toggleTheme(bool v) => setState(() => _dark = v);
 
   @override
   Widget build(BuildContext context) {
@@ -16,15 +25,28 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorSchemeSeed: Colors.indigo,
-        textTheme: const TextTheme(bodyMedium: TextStyle(fontSize: 18)),
+        brightness: Brightness.light,
+        scaffoldBackgroundColor: const Color(0xFFF7FBFF),
+        cardTheme: CardTheme(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), elevation: 4),
+        textTheme: const TextTheme(bodyMedium: TextStyle(fontSize: 16)),
       ),
-      home: const DeviceList(),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        colorSchemeSeed: Colors.indigo,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF081124),
+        cardTheme: CardTheme(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), elevation: 6),
+      ),
+      themeMode: _dark ? ThemeMode.dark : ThemeMode.light,
+      home: DeviceList(onToggleTheme: _toggleTheme, darkMode: _dark),
     );
   }
 }
 
 class DeviceList extends StatefulWidget {
-  const DeviceList({super.key});
+  final void Function(bool)? onToggleTheme;
+  final bool? darkMode;
+  const DeviceList({super.key, this.onToggleTheme, this.darkMode});
   @override
   _DeviceListState createState() => _DeviceListState();
 }
@@ -33,6 +55,7 @@ class _DeviceListState extends State<DeviceList> {
   final String _baseUrl = 'http://10.0.2.2:8080/api/devices';
   List<dynamic> devices = [];
   Timer? _timer;
+  String _search = '';
 
   @override
   void initState() {
@@ -147,22 +170,28 @@ class _DeviceListState extends State<DeviceList> {
   Widget _buildDeviceCard(dynamic d) {
     final type = d['type'];
     return Card(
-      elevation: 3,
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              d['name'] ?? 'Thiết bị',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              d['topic'] ?? '',
-              style: const TextStyle(color: Colors.grey, fontSize: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(d['name'] ?? 'Thiết bị', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 6),
+                      Text(d['topic'] ?? '', style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _statusChipFor(d),
+              ],
             ),
             const SizedBox(height: 12),
             if (type == 'LED') _buildLedControl(d),
@@ -174,16 +203,24 @@ class _DeviceListState extends State<DeviceList> {
     );
   }
 
+  Widget _statusChipFor(dynamic d) {
+    if (d['type'] == 'LED') {
+      final on = d['ledState'] == true;
+      return Chip(label: Text(on ? 'ON' : 'OFF'), backgroundColor: on ? Colors.green.shade100 : Colors.orange.shade100);
+    }
+    if (d['type'] == 'MOTOR') {
+      final state = d['motorState'] ?? 0;
+      return Chip(label: Text(state == 1 ? 'Tiến' : state == -1 ? 'Lùi' : 'Dừng'));
+    }
+    return Chip(label: const Text('Sensor'));
+  }
+
   Widget _buildLedControl(dynamic d) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Icon(Icons.lightbulb_outline, color: Colors.amber, size: 32),
-        Switch.adaptive(
-          value: d['ledState'] ?? false,
-          onChanged: (v) => _toggleLed(d['id'], v),
-          activeColor: Colors.amber,
-        ),
+        Row(children: const [Icon(Icons.lightbulb_outline, color: Colors.amber, size: 28), SizedBox(width: 8), Text('Bóng LED')]),
+        Switch.adaptive(value: d['ledState'] ?? false, onChanged: (v) => _toggleLed(d['id'], v), activeColor: Colors.amber),
       ],
     );
   }
@@ -194,63 +231,17 @@ class _DeviceListState extends State<DeviceList> {
     if (state == 1) label = '🟩 Tiến';
     if (state == -1) label = '🟦 Lùi';
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.toys, color: Colors.blueAccent, size: 30),
-            const SizedBox(width: 10),
-            Text(
-              "Trạng thái: $label",
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            ElevatedButton.icon(
-              icon: const Icon(Icons.arrow_back),
-              label: const Text("Lùi"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue.shade300,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-              ),
-              onPressed: () => _toggleMotor(d['id'], -1),
-            ),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.stop_circle),
-              label: const Text("Dừng"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.grey.shade300,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-              ),
-              onPressed: () => _toggleMotor(d['id'], 0),
-            ),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.arrow_forward),
-              label: const Text("Tiến"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green.shade300,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-              ),
-              onPressed: () => _toggleMotor(d['id'], 1),
-            ),
-          ],
-        ),
-      ],
-    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [const Icon(Icons.toys, color: Colors.blueAccent, size: 26), const SizedBox(width: 8), Text('Trạng thái: $label', style: const TextStyle(fontWeight: FontWeight.w600))]),
+      const SizedBox(height: 8),
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Expanded(child: ElevatedButton.icon(icon: const Icon(Icons.arrow_back), label: const Text('Lùi'), style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)), onPressed: () => _toggleMotor(d['id'], -1))),
+        const SizedBox(width: 8),
+        Expanded(child: ElevatedButton.icon(icon: const Icon(Icons.stop_circle), label: const Text('Dừng'), style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12), backgroundColor: Colors.grey.shade300), onPressed: () => _toggleMotor(d['id'], 0))),
+        const SizedBox(width: 8),
+        Expanded(child: ElevatedButton.icon(icon: const Icon(Icons.arrow_forward), label: const Text('Tiến'), style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)), onPressed: () => _toggleMotor(d['id'], 1))),
+      ])
+    ]);
   }
 
   Widget _buildSensorInfo(dynamic d) {
@@ -278,40 +269,33 @@ class _DeviceListState extends State<DeviceList> {
     final led = devices.where((e) => e['type'] == 'LED').toList();
     final motor = devices.where((e) => e['type'] == 'MOTOR').toList();
     final sensor = devices.where((e) => e['type'] == 'SENSOR').toList();
-
     return DefaultTabController(
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('💡 Exerciser 3.01 Control'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(icon: Icon(Icons.lightbulb_outline), text: 'LED'),
-              Tab(icon: Icon(Icons.directions_car), text: 'Motor'),
-              Tab(icon: Icon(Icons.sensors), text: 'Cảm biến'),
-            ],
-          ),
+          title: const Text('💡 Exerciser 3.01'),
+          bottom: const TabBar(tabs: [Tab(icon: Icon(Icons.lightbulb_outline), text: 'LED'), Tab(icon: Icon(Icons.directions_car), text: 'Motor'), Tab(icon: Icon(Icons.sensors), text: 'Cảm biến')]),
           actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _loadDevices,
-            ),
+            IconButton(icon: const Icon(Icons.refresh), onPressed: _loadDevices),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: Row(children: [
+                const Icon(Icons.brightness_6, size: 18),
+                const SizedBox(width: 6),
+                Switch(value: widget.darkMode ?? false, onChanged: (v) => widget.onToggleTheme?.call(v), activeColor: Colors.white),
+              ]),
+            )
           ],
         ),
-        body: TabBarView(
-          children: [
-            _buildDeviceList(led, 'Chưa có thiết bị LED'),
-            _buildDeviceList(motor, 'Chưa có thiết bị Motor'),
-            _buildDeviceList(sensor, 'Chưa có thiết bị cảm biến'),
-          ],
-        ),
+        body: TabBarView(children: [
+          RefreshIndicator(onRefresh: _loadDevices, child: _buildDeviceList(led, 'Chưa có thiết bị LED')),
+          RefreshIndicator(onRefresh: _loadDevices, child: _buildDeviceList(motor, 'Chưa có thiết bị Motor')),
+          RefreshIndicator(onRefresh: _loadDevices, child: _buildDeviceList(sensor, 'Chưa có thiết bị cảm biến')),
+        ]),
         floatingActionButton: FloatingActionButton(
           child: const Icon(Icons.add),
           onPressed: () async {
-            final ok = await Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => AddDevice(baseUrl: _baseUrl)),
-            );
+            final ok = await Navigator.push(context, MaterialPageRoute(builder: (_) => AddDevice(baseUrl: _baseUrl)));
             if (ok == true) _loadDevices();
           },
         ),
@@ -320,14 +304,30 @@ class _DeviceListState extends State<DeviceList> {
   }
 
   Widget _buildDeviceList(List<dynamic> list, String emptyText) {
-    if (list.isEmpty) {
-      return Center(
-        child: Text(emptyText, style: const TextStyle(color: Colors.grey)),
+    final filtered = list.where((d) => (d['name'] ?? '').toString().toLowerCase().contains(_search.toLowerCase()) || (d['topic'] ?? '').toString().toLowerCase().contains(_search.toLowerCase())).toList();
+    if (filtered.isEmpty) {
+      return ListView(
+        children: [
+          const SizedBox(height: 120),
+          Center(child: Text(emptyText, style: const TextStyle(color: Colors.grey))),
+        ],
       );
     }
     return ListView.builder(
-      itemCount: list.length,
-      itemBuilder: (_, i) => _buildDeviceCard(list[i]),
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      itemCount: filtered.length + 1,
+      itemBuilder: (ctx, i) {
+        if (i == 0) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: TextField(
+              decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: 'Tìm thiết bị hoặc topic', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+              onChanged: (v) => setState(() => _search = v),
+            ),
+          );
+        }
+        return _buildDeviceCard(filtered[i - 1]);
+      },
     );
   }
 }
